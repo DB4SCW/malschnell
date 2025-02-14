@@ -14,7 +14,8 @@ default_config = {
   "MULTICAST_GROUP" => '239.255.0.1',
   "PROXY_PACKAGES"  => false,
   "PROXY_TO_IP"     => '127.0.0.1',
-  "PROXY_TO_PORT"   => 2237
+  "PROXY_TO_PORT"   => 2237,
+  "VERBOSE_LOGGING" => false
 }
 
 # config handling
@@ -41,6 +42,7 @@ MULTICAST_GROUP  = config.fetch('MULTICAST_GROUP', default_config['MULTICAST_GRO
 PROXY_PACKAGES  = config.fetch('PROXY_PACKAGES', default_config['PROXY_PACKAGES'])
 PROXY_TO_IP  = config.fetch('PROXY_TO_IP', default_config['PROXY_TO_IP'])
 PROXY_TO_PORT  = config.fetch('PROXY_TO_PORT', default_config['PROXY_TO_PORT'])
+VERBOSE_LOGGING  = config.fetch('VERBOSE_LOGGING', default_config['VERBOSE_LOGGING'])
 
 # create UDP receive  sockets:
 udp_recv = UDPSocket.new
@@ -191,8 +193,8 @@ loop do
 
       # check if package is ADIF QSO, if not wait for next package
       unless data.include?("<adif_ver:")
-        store_other(db, data, sender_ip, sender_port)
-        puts color_text("Received packet does not appear to be a valid ADIF package. Ignoring.", "yellow")
+        store_other(db, data, sender_ip, sender_port) if VERBOSE_LOGGING
+        puts color_text("Received packet does not appear to be a valid ADIF package. Ignoring.", "yellow") if VERBOSE_LOGGING
         next
       end
 
@@ -297,8 +299,8 @@ loop do
             end
 
             unless data.include?("<adif_ver:")
-              store_other(db, data, sender_ip, sender_port)
-              print color_text("\nReceived packet does not appear to be a valid ADIF package. Ignoring.", "yellow")
+              store_other(db, data, sender_ip, sender_port) if VERBOSE_LOGGING
+              print color_text("\nReceived packet does not appear to be a valid ADIF package. Ignoring.", "yellow") if VERBOSE_LOGGING
               next
             end
 
