@@ -11,7 +11,10 @@ default_config = {
   'SEND_IP'         => '127.0.0.1',
   'DATABASE_NAME'   => 'packages.sqlite3',
   "DB_JOURNAL_MODE" => 'DELETE',
-  "MULTICAST_GROUP" => '239.255.0.1'
+  "MULTICAST_GROUP" => '239.255.0.1',
+  "PROXY_PACKAGES"  => false,
+  "PROXY_TO_IP"     => '127.0.0.1',
+  "PROXY_TO_PORT"   => 2237
 }
 
 # config handling
@@ -35,8 +38,11 @@ SEND_IP          = config.fetch('SEND_IP', default_config['SEND_IP'])
 DB_FILE          = config.fetch('DATABASE_NAME', default_config['DATABASE_NAME'])
 DB_JOURNAL_MODE  = config.fetch('DB_JOURNAL_MODE', default_config['DB_JOURNAL_MODE'])
 MULTICAST_GROUP  = config.fetch('MULTICAST_GROUP', default_config['MULTICAST_GROUP'])
+PROXY_PACKAGES  = config.fetch('PROXY_PACKAGES', default_config['PROXY_PACKAGES'])
+PROXY_TO_IP  = config.fetch('PROXY_TO_IP', default_config['PROXY_TO_IP'])
+PROXY_TO_PORT  = config.fetch('PROXY_TO_PORT', default_config['PROXY_TO_PORT'])
 
-# create UDP sockets:
+# create UDP receive  sockets:
 udp_recv = UDPSocket.new
 udp_recv.bind(BIND_IP, WSJT_RX_PORT)
 
@@ -45,7 +51,13 @@ multicast_addr = MULTICAST_GROUP
 membership = IPAddr.new(multicast_addr).hton + IPAddr.new(BIND_IP).hton
 udp_recv.setsockopt(Socket::IPPROTO_IP, Socket::IP_ADD_MEMBERSHIP, membership)
 
+# create UDP send socket(s)
 udp_send = UDPSocket.new
+
+proxy_send = nil
+if(PROXY_PACKAGES)
+  proxy_send = UDPSocket.new
+end
 
 # initialize the SQLite database.
 db = SQLite3::Database.new(DB_FILE)
@@ -148,7 +160,11 @@ loop do
   if $indefinite_mode_running
     puts "  3) Stop indefinite mode"
   else
-    puts "  3) Indefinite Input Mode – start receiving packages indefinitely"
+    if PROXY_PACKAGES
+      puts "  3) Indefinite Input Mode – start rcv+proxy packages indefinitely"
+    else
+      puts "  3) Indefinite Input Mode – start receiving packages indefinitely"
+    end
   end
   puts "  4) Exit"
   print "Choice: "
@@ -274,6 +290,11 @@ loop do
             data, sender_info = udp_recv.recvfrom(4096)
             sender_ip = sender_info[3]
             sender_port = sender_info[1]
+
+            # proxy all received packages to defined ip and port
+            if PROXY_PACKAGES
+              proxy_send.send(data, 0, PROXY_TO_IP, PROXY_TO_PORT)
+            end
 
             unless data.include?("<adif_ver:")
               store_other(db, data, sender_ip, sender_port)
