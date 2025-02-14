@@ -1,4 +1,5 @@
 packages.db
+packages.sqlite3
 malschnell.exe
 config.yml
 *.adi

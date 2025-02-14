@@ -7,7 +7,8 @@ default_config = {
   'WSJT_RX_PORT' => 2237,
   'SEND_PORT'    => 2333,
   'BIND_IP'      => '0.0.0.0',
-  'SEND_IP'      => '127.0.0.1'
+  'SEND_IP'      => '127.0.0.1',
+  'DATABASE_NAME' => 'packages.sqlite3'
 }
 
 # config handling
@@ -28,6 +29,7 @@ WSJT_RX_PORT = config.fetch('WSJT_RX_PORT', default_config['WSJT_RX_PORT'])
 SEND_PORT    = config.fetch('SEND_PORT', default_config['SEND_PORT'])
 BIND_IP      = config.fetch('BIND_IP', default_config['BIND_IP'])
 SEND_IP      = config.fetch('SEND_IP', default_config['SEND_IP'])
+DB_FILE      = config.fetch('DATABASE_NAME', default_config['DATABASE_NAME'])
 
 # create UDP sockets:
 udp_recv = UDPSocket.new
@@ -36,7 +38,6 @@ udp_recv.bind(BIND_IP, WSJT_RX_PORT)
 udp_send = UDPSocket.new
 
 # initialize the SQLite database.
-DB_FILE = "packages.db"
 db = SQLite3::Database.new(DB_FILE)
 
 # create table if it doesn't exist.
@@ -45,6 +46,17 @@ db.execute <<-SQL
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     callsign TEXT,
     adif TEXT,
+    ip TEXT,
+    port INTEGER,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+SQL
+
+# creates "other" table
+db.execute <<-SQL
+  CREATE TABLE IF NOT EXISTS other (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    content TEXT,
     ip TEXT,
     port INTEGER,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -68,9 +80,14 @@ def replace_station_callsign(adif_text, new_callsign)
   end
 end
 
-# insert a record into the database.
+# insert a qso record into the database.
 def store_package(db, callsign, adif, sender_ip, sender_port)
   db.execute("INSERT INTO packages (callsign, adif, ip, port) VALUES (?, ?, ?, ?)", [callsign, adif, sender_ip, sender_port])
+end
+
+# insert an 'other' record into the database.
+def store_other(db, content, sender_ip, sender_port)
+  db.execute("INSERT INTO other (content, ip, port) VALUES (?, ?, ?)", [content, sender_ip, sender_port])
 end
 
 # get distinct new_callsign values with count of stored packages.
@@ -136,7 +153,8 @@ loop do
 
       # check if package is ADIF QSO, if not wait for next package
       unless data.include?("<adif_ver:")
-        puts color_text("Received packet from #{sender_ip}:#{sender_port} does not appear to be a valid ADIF package. Ignoring.", "yellow")
+        store_other(db, data, sender_ip, sender_port)
+        puts color_text("Received packet does not appear to be a valid ADIF package. Ignoring.", "yellow")
         next
       end
 
@@ -189,7 +207,7 @@ loop do
     # check validity of selection and go to next interation
     index = selection.to_i - 1
     if index < 0 || index >= rows.size
-      puts "Invalid selection."
+      puts color_text("Invalid selection. Index " + (index + 1).to_s + " does not exist.", "red")
       next
     end
 
@@ -200,7 +218,7 @@ loop do
     packages = retrieve_packages(db, selected_call)
     
     # print whats happening
-    puts "Sending #{packages.size} package(s) for '#{selected_call}' to #{SEND_IP}:#{SEND_PORT}..."
+    puts color_text("Sending #{packages.size} package(s) for '#{selected_call}' to #{SEND_IP}:#{SEND_PORT}...", "yellow")
 
     # rebroadcast each package
     packages.each do |id, pkg|
@@ -212,17 +230,17 @@ loop do
     delete_packages(db, selected_call)
 
     # print info message
-    puts color_text("Sent and removed packages for '#{selected_call}'.", "green")
+    puts color_text("Sent and removed stored packages for '#{selected_call}'.", "green")
 
   when '3'
     
     # exiting the program
-    puts "Exiting."
+    puts color_text("Exiting.", "green")
     break
 
   else
     # inform about invalid choice
-    puts "Invalid choice. Please enter 1, 2, or 3."
+    puts color_text("Invalid choice. Please enter 1, 2, or 3.", "red")
   end
 end
 
