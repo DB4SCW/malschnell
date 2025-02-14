@@ -39,9 +39,9 @@ SEND_IP          = config.fetch('SEND_IP', default_config['SEND_IP'])
 DB_FILE          = config.fetch('DATABASE_NAME', default_config['DATABASE_NAME'])
 DB_JOURNAL_MODE  = config.fetch('DB_JOURNAL_MODE', default_config['DB_JOURNAL_MODE'])
 MULTICAST_GROUP  = config.fetch('MULTICAST_GROUP', default_config['MULTICAST_GROUP'])
-PROXY_PACKAGES  = config.fetch('PROXY_PACKAGES', default_config['PROXY_PACKAGES'])
-PROXY_TO_IP  = config.fetch('PROXY_TO_IP', default_config['PROXY_TO_IP'])
-PROXY_TO_PORT  = config.fetch('PROXY_TO_PORT', default_config['PROXY_TO_PORT'])
+PROXY_PACKAGES   = config.fetch('PROXY_PACKAGES', default_config['PROXY_PACKAGES'])
+PROXY_TO_IP      = config.fetch('PROXY_TO_IP', default_config['PROXY_TO_IP'])
+PROXY_TO_PORT    = config.fetch('PROXY_TO_PORT', default_config['PROXY_TO_PORT'])
 VERBOSE_LOGGING  = config.fetch('VERBOSE_LOGGING', default_config['VERBOSE_LOGGING'])
 
 # create UDP receive  sockets:
@@ -93,6 +93,15 @@ SQL
 # a helper method to extract the original station_callsign value from the ADIF text.
 def extract_station_callsign(adif_text)
   if match = adif_text.match(/<station_callsign:\d+>([^<]+)/i)
+    match[1].strip
+  else
+    nil
+  end
+end
+
+# a helper method to extract the partner callsign value from the ADIF text.
+def extract_partner_callsign(adif_text)
+  if match = adif_text.match(/<call:\d+>([^<]+)/i)
     match[1].strip
   else
     nil
@@ -207,11 +216,14 @@ loop do
       # extract the original station_callsign (if present).
       call = extract_station_callsign(adif) || "UNKNOWN"
 
+      # extract the partner callsign
+      partner_call = extract_partner_callsign(adif) || "UNKNOWN"
+
       # store both original and modified packages, plus original and new callsigns.
       store_package(db, call, adif, sender_ip, sender_port)
 
       # info about the package we just received
-      puts color_text("Stored ADIF package for callsign '#{call}' (from #{sender_ip}:#{sender_port}).", "green")
+      puts color_text("\nStored ADIF package for qso with #{partner_call} using callsign '#{call}' (from #{sender_ip}:#{sender_port}).", "green")
 
       # set the flag because we found an adif package
       notadifpackage = false
@@ -307,8 +319,9 @@ loop do
             adif_start = data.index("<adif_ver:")
             adif = data[adif_start..-1]
             call = extract_station_callsign(adif) || "UNKNOWN"
+            partner_call = extract_partner_callsign(adif) || "UNKNOWN"
             store_package(db, call, adif, sender_ip, sender_port)
-            print color_text("\nStored ADIF package for callsign '#{call}' (from #{sender_ip}:#{sender_port}).", "green")
+            print color_text("\nStored ADIF package for qso with #{partner_call} using callsign '#{call}' (from #{sender_ip}:#{sender_port}).", "green")
           end
         end
       end
