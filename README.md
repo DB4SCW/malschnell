@@ -11,9 +11,9 @@ So... you want to work them quickly, but...
 
 WavelogGate will, of course, still send this ADIF package to the API endpoint for your special event call and will refuse to do so.
 
-This programm hooks itself into the default (not the secondary) UDP server of WSJT-X. You can specify the desired station callsign for the next QSO package that will arrive. This will get stored in a sqlite database with the modified station callsign.
+This programm hooks itself into the default (not the secondary) UDP server of WSJT-X.
 
-Mode 1 allows you the collect multiple QSOs (albeit one by one) for your own (or any other) call over the course of your session without switching WavelogGate.
+Mode 1 allows you the collect multiple QSOs (albeit one by one) for your own (or any other) call over the course of your session without switching WavelogGate. Those packages will get stored in the database for later output.
 
 Once you are ready, switch Waveloggate to the correct API endpoint and station id and choose mode 2 to get all those collected QSOs from the database and send them over to WavelogGate and (finally) to Wavelog.
 
