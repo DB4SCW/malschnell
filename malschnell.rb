@@ -1,6 +1,7 @@
 require 'socket'
 require 'sqlite3'
 require 'yaml'
+require 'ipaddr'
 
 # Default configuration values
 default_config = {
@@ -9,7 +10,8 @@ default_config = {
   'BIND_IP'         => '0.0.0.0',
   'SEND_IP'         => '127.0.0.1',
   'DATABASE_NAME'   => 'packages.sqlite3',
-  "DB_JOURNAL_MODE" => 'DELETE'
+  "DB_JOURNAL_MODE" => 'DELETE',
+  "MULTICAST_GROUP" => '239.255.0.1'
 }
 
 # config handling
@@ -32,10 +34,16 @@ BIND_IP          = config.fetch('BIND_IP', default_config['BIND_IP'])
 SEND_IP          = config.fetch('SEND_IP', default_config['SEND_IP'])
 DB_FILE          = config.fetch('DATABASE_NAME', default_config['DATABASE_NAME'])
 DB_JOURNAL_MODE  = config.fetch('DB_JOURNAL_MODE', default_config['DB_JOURNAL_MODE'])
+MULTICAST_GROUP  = config.fetch('MULTICAST_GROUP', default_config['MULTICAST_GROUP'])
 
 # create UDP sockets:
 udp_recv = UDPSocket.new
 udp_recv.bind(BIND_IP, WSJT_RX_PORT)
+
+# Join the multicast group.
+multicast_addr = MULTICAST_GROUP 
+membership = IPAddr.new(multicast_addr).hton + IPAddr.new(BIND_IP).hton
+udp_recv.setsockopt(Socket::IPPROTO_IP, Socket::IP_ADD_MEMBERSHIP, membership)
 
 udp_send = UDPSocket.new
 
