@@ -20,7 +20,10 @@ Once you are ready, switch Waveloggate to the correct API endpoint and station i
 ## How do I use this?
 
 ### Mac or Linux
-Just run ```ruby malschnell.rb```. 
+
+Make sure all dependencies are there. It's just one, the sqlite3 gem: ```gem install sqlite3```
+
+After that, just run ```ruby malschnell.rb```. 
 
 This will create the database and the default config file in the working directory and start the collection or output process as you choose.
 
