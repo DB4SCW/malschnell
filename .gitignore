@@ -1,5 +1,7 @@
 packages.db
 packages.sqlite3
+packages.sqlite3-wal
+packages.sqlite3-shm
 malschnell.exe
 config.yml
 *.adi

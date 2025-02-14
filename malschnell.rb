@@ -4,11 +4,12 @@ require 'yaml'
 
 # Default configuration values
 default_config = {
-  'WSJT_RX_PORT' => 2237,
-  'SEND_PORT'    => 2333,
-  'BIND_IP'      => '0.0.0.0',
-  'SEND_IP'      => '127.0.0.1',
-  'DATABASE_NAME' => 'packages.sqlite3'
+  'WSJT_RX_PORT'    => 2237,
+  'SEND_PORT'       => 2333,
+  'BIND_IP'         => '0.0.0.0',
+  'SEND_IP'         => '127.0.0.1',
+  'DATABASE_NAME'   => 'packages.sqlite3',
+  "DB_JOURNAL_MODE" => 'DELETE'
 }
 
 # config handling
@@ -25,11 +26,12 @@ end
 config = YAML.load_file(config_file)
 
 # Set configuration constants with values from the config file or defaults
-WSJT_RX_PORT = config.fetch('WSJT_RX_PORT', default_config['WSJT_RX_PORT'])
-SEND_PORT    = config.fetch('SEND_PORT', default_config['SEND_PORT'])
-BIND_IP      = config.fetch('BIND_IP', default_config['BIND_IP'])
-SEND_IP      = config.fetch('SEND_IP', default_config['SEND_IP'])
-DB_FILE      = config.fetch('DATABASE_NAME', default_config['DATABASE_NAME'])
+WSJT_RX_PORT     = config.fetch('WSJT_RX_PORT', default_config['WSJT_RX_PORT'])
+SEND_PORT        = config.fetch('SEND_PORT', default_config['SEND_PORT'])
+BIND_IP          = config.fetch('BIND_IP', default_config['BIND_IP'])
+SEND_IP          = config.fetch('SEND_IP', default_config['SEND_IP'])
+DB_FILE          = config.fetch('DATABASE_NAME', default_config['DATABASE_NAME'])
+DB_JOURNAL_MODE  = config.fetch('DB_JOURNAL_MODE', default_config['DB_JOURNAL_MODE'])
 
 # create UDP sockets:
 udp_recv = UDPSocket.new
@@ -39,6 +41,9 @@ udp_send = UDPSocket.new
 
 # initialize the SQLite database.
 db = SQLite3::Database.new(DB_FILE)
+
+# set journaling mode
+db.execute "PRAGMA journal_mode = #{DB_JOURNAL_MODE};"
 
 # create table if it doesn't exist.
 db.execute <<-SQL
