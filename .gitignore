@@ -1,3 +1,6 @@
 packages.db
 malschnell.exe
 config.yml
+*.adi
+*.adif
+*.txt

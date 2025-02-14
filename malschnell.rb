@@ -43,10 +43,10 @@ db = SQLite3::Database.new(DB_FILE)
 db.execute <<-SQL
   CREATE TABLE IF NOT EXISTS packages (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    new_callsign TEXT,
-    original_callsign TEXT,
-    original_adif TEXT,
-    modified_adif TEXT,
+    callsign TEXT,
+    adif TEXT,
+    ip TEXT,
+    port INTEGER,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
 SQL
@@ -69,24 +69,39 @@ def replace_station_callsign(adif_text, new_callsign)
 end
 
 # insert a record into the database.
-def store_package(db, new_callsign, original_callsign, original_adif, modified_adif)
-  db.execute("INSERT INTO packages (new_callsign, original_callsign, original_adif, modified_adif) VALUES (?, ?, ?, ?)",
-             [new_callsign, original_callsign, original_adif, modified_adif])
+def store_package(db, callsign, adif, sender_ip, sender_port)
+  db.execute("INSERT INTO packages (callsign, adif, ip, port) VALUES (?, ?, ?, ?)", [callsign, adif, sender_ip, sender_port])
 end
 
 # get distinct new_callsign values with count of stored packages.
 def list_callsigns(db)
-  db.execute("SELECT new_callsign, COUNT(*) FROM packages GROUP BY new_callsign")
+  db.execute("SELECT callsign, COUNT(*) FROM packages GROUP BY callsign")
 end
 
 # retrieve packages for a given new_callsign, ordered by created datetime.
-def retrieve_packages(db, new_callsign)
-  db.execute("SELECT id, modified_adif FROM packages WHERE new_callsign = ? ORDER BY created_at ASC", [new_callsign])
+def retrieve_packages(db, callsign)
+  db.execute("SELECT id, adif FROM packages WHERE callsign = ? ORDER BY created_at ASC", [callsign])
 end
 
 # delete packages for a given new_callsign.
-def delete_packages(db, new_callsign)
-  db.execute("DELETE FROM packages WHERE new_callsign = ?", [new_callsign])
+def delete_packages(db, callsign)
+  db.execute("DELETE FROM packages WHERE callsign = ?", [callsign])
+end
+
+# colors the text for console output
+def color_text(text, color)
+  colorcode = case color
+    when "yellow" then "\e[33m"
+    when "green" then "\e[32m"
+    when "blue" then "\e[34m"
+    when "red" then "\e[31m"
+    when "black" then "\e[30m"
+    when "cyan" then "\e[36m"
+    else "\e[0m"
+  end
+
+  # color the text before setting the color back to default
+  colorcode + text + "\e[0m"
 end
 
 # main menu loop.
@@ -94,7 +109,7 @@ loop do
   
   # print instructions to screen
   puts "\nSelect mode:"
-  puts "  1) Input – capture, modify and store next ADIF package for rebroadcast later"
+  puts "  1) Input – capture and store next ADIF package for rebroadcast later"
   puts "  2) Output – list stored packages & broadcast them"
   puts "  3) Exit"
   print "Choice: "
@@ -107,19 +122,6 @@ loop do
   when '1'
     
     # mode 1: Input Mode
-    # print instructions
-    print "\nEnter the callsign for which the next logged wsjt-x QSO \nshould be rebroadcasted later"
-    print "\n(or leave blank to return to main menu): "
-    
-    # get callsign input
-    user_callsign = gets.chomp.strip.upcase
-    
-    # check for abort condition
-    if user_callsign.empty?
-      puts "Returning to main menu..."
-      next
-    end
-
     # enter waiting mode
     puts "Waiting for the next ADIF package on port #{WSJT_RX_PORT}..."
     
@@ -134,7 +136,7 @@ loop do
 
       # check if package is ADIF QSO, if not wait for next package
       unless data.include?("<adif_ver:")
-        puts "Received packet from #{sender_ip}:#{sender_port} does not appear to be a valid ADIF package. Ignoring."
+        puts color_text("Received packet from #{sender_ip}:#{sender_port} does not appear to be a valid ADIF package. Ignoring.", "yellow")
         next
       end
 
@@ -142,19 +144,16 @@ loop do
       adif_start = data.index("<adif_ver:")
       
       # get original adif
-      original_adif = data[adif_start..-1]
+      adif = data[adif_start..-1]
 
       # extract the original station_callsign (if present).
-      orig_call = extract_station_callsign(original_adif) || "UNKNOWN"
-
-      # replace the station_callsign field with the user-supplied callsign.
-      modified_adif = replace_station_callsign(original_adif, user_callsign)
+      call = extract_station_callsign(adif) || "UNKNOWN"
 
       # store both original and modified packages, plus original and new callsigns.
-      store_package(db, user_callsign, orig_call, original_adif, modified_adif)
+      store_package(db, call, adif, sender_ip, sender_port)
 
       # info about the package we just received
-      puts "Stored ADIF package for new callsign '#{user_callsign}' (original station_callsign: '#{orig_call}') from #{sender_ip}:#{sender_port}."
+      puts color_text("Stored ADIF package for callsign '#{call}' (from #{sender_ip}:#{sender_port}).", "green")
 
       # set the flag because we found an adif package
       notadifpackage = false
@@ -170,7 +169,7 @@ loop do
     
     # return if none were found
     if rows.empty?
-      puts "\nNo stored packages in the database."
+      puts color_text("\nNo stored packages in the database.", "cyan")
       next
     end
 
@@ -213,7 +212,7 @@ loop do
     delete_packages(db, selected_call)
 
     # print info message
-    puts "Sent and removed packages for '#{selected_call}'."
+    puts color_text("Sent and removed packages for '#{selected_call}'.", "green")
 
   when '3'
     
