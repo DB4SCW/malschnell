@@ -17,6 +17,8 @@ This allows you the collect multiple QSOs for your own (or any other) call over 
 
 Once you are ready, switch Waveloggate to the correct API endpoint and station id and choose the output option to get all those collected QSOs from the database and send them over to WavelogGate and (finally) to Wavelog.
 
+You can also use this program in mode 3, which is "indefinite mode", which basically allows you to cache all WSJT-X UDP packages in an offline environment to upload them later once you regain network capabilities to run WavelogGate.
+
 ## How do I use this?
 
 ### Mac or Linux

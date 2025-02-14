@@ -126,14 +126,23 @@ def color_text(text, color)
   colorcode + text + "\e[0m"
 end
 
+# Global variables for indefinite mode
+indefinite_thread = nil
+$indefinite_mode_running = false
+
 # main menu loop.
 loop do
   
   # print instructions to screen
   puts "\nSelect mode:"
-  puts "  1) Input – capture and store next ADIF package for rebroadcast later"
+  puts "  1) Input – capture and store NEXT ADIF package for rebroadcast later"
   puts "  2) Output – list stored packages & broadcast them"
-  puts "  3) Exit"
+  if $indefinite_mode_running
+    puts "  3) Stop indefinite mode"
+  else
+    puts "  3) Indefinite Input Mode – start receiving packages indefinitely"
+  end
+  puts "  4) Exit"
   print "Choice: "
 
   # get the users choice
@@ -238,6 +247,44 @@ loop do
     puts color_text("Sent and removed stored packages for '#{selected_call}'.", "green")
 
   when '3'
+    # Indefinite mode
+    
+    if $indefinite_mode_running
+      # Stop indefinite mode
+      $indefinite_mode_running = false
+      indefinite_thread.join if indefinite_thread
+      indefinite_thread = nil
+      puts color_text("Indefinite receiving mode stopped.", "green")
+    else
+      # start indefinite mode in a separate thread
+      $indefinite_mode_running = true
+      indefinite_thread = Thread.new do
+        while $indefinite_mode_running
+          # use IO.select to avoid blocking indefinitely so we can check the flag periodically.
+          ready = IO.select([udp_recv], nil, nil, 1)
+          if ready
+            data, sender_info = udp_recv.recvfrom(4096)
+            sender_ip = sender_info[3]
+            sender_port = sender_info[1]
+
+            unless data.include?("<adif_ver:")
+              store_other(db, data, sender_ip, sender_port)
+              print color_text("\nReceived packet does not appear to be a valid ADIF package. Ignoring.", "yellow")
+              next
+            end
+
+            adif_start = data.index("<adif_ver:")
+            adif = data[adif_start..-1]
+            call = extract_station_callsign(adif) || "UNKNOWN"
+            store_package(db, call, adif, sender_ip, sender_port)
+            print color_text("\nStored ADIF package for callsign '#{call}' (from #{sender_ip}:#{sender_port}).", "green")
+          end
+        end
+      end
+      puts color_text("Indefinite receiving mode started in background.", "green")
+    end
+
+  when '4'
     
     # exiting the program
     puts color_text("Exiting.", "green")
