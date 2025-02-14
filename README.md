@@ -13,9 +13,9 @@ WavelogGate will, of course, still send this ADIF package to the API endpoint fo
 
 This programm hooks itself into the default (not the secondary) UDP server of WSJT-X. You can specify the desired station callsign for the next QSO package that will arrive. This will get stored in a sqlite database with the modified station callsign.
 
-This allows you the collect multiple QSOs for your own (or any other) call over the course of your session without switching WavelogGate.
+Mode 1 allows you the collect multiple QSOs (albeit one by one) for your own (or any other) call over the course of your session without switching WavelogGate.
 
-Once you are ready, switch Waveloggate to the correct API endpoint and station id and choose the output option to get all those collected QSOs from the database and send them over to WavelogGate and (finally) to Wavelog.
+Once you are ready, switch Waveloggate to the correct API endpoint and station id and choose mode 2 to get all those collected QSOs from the database and send them over to WavelogGate and (finally) to Wavelog.
 
 You can also use this program in mode 3, which is "indefinite mode", which basically allows you to cache all WSJT-X UDP packages in an offline environment to upload them later once you regain network capabilities to run WavelogGate.
 
