@@ -2,6 +2,9 @@ require 'socket'
 require 'sqlite3'
 require 'yaml'
 require 'ipaddr'
+require 'net/http'
+require 'json'
+require 'uri'
 
 # Default configuration values
 default_config = {
@@ -15,7 +18,10 @@ default_config = {
   "PROXY_PACKAGES"  => false,
   "PROXY_TO_IP"     => '127.0.0.1',
   "PROXY_TO_PORT"   => 2237,
-  "VERBOSE_LOGGING" => false
+  "VERBOSE_LOGGING" => false,
+  "WAVELOG_DIRECT"  => false,
+  "WAVELOG_URL"     => '',
+  "WAVELOG_DICT"    => Hash.new
 }
 
 # config handling
@@ -43,6 +49,9 @@ PROXY_PACKAGES   = config.fetch('PROXY_PACKAGES', default_config['PROXY_PACKAGES
 PROXY_TO_IP      = config.fetch('PROXY_TO_IP', default_config['PROXY_TO_IP'])
 PROXY_TO_PORT    = config.fetch('PROXY_TO_PORT', default_config['PROXY_TO_PORT'])
 VERBOSE_LOGGING  = config.fetch('VERBOSE_LOGGING', default_config['VERBOSE_LOGGING'])
+WAVELOG_DIRECT   = config.fetch('WAVELOG_DIRECT', default_config['WAVELOG_DIRECT'])
+WAVELOG_URL      = config.fetch('WAVELOG_URL', default_config['WAVELOG_URL'])
+WAVELOG_DICT     = config.fetch('WAVELOG_DICT', default_config['WAVELOG_DICT'])
 
 # create UDP receive  sockets:
 udp_recv = UDPSocket.new
@@ -117,7 +126,7 @@ def replace_station_callsign(adif_text, new_callsign)
 end
 
 # insert a qso record into the database.
-def store_package(db, callsign, adif, sender_ip, sender_port)
+def store_package(db, callsign, adif, sender_ip, sender_port, waveloggate_mode = false)
   db.execute("INSERT INTO packages (callsign, adif, ip, port) VALUES (?, ?, ?, ?)", [callsign, adif, sender_ip, sender_port])
 end
 
@@ -139,6 +148,94 @@ end
 # delete packages for a given new_callsign.
 def delete_packages(db, callsign)
   db.execute("DELETE FROM packages WHERE callsign = ?", [callsign])
+end
+
+# handle package
+def handle_incoming_adif_package(db, callsign, adif, sender_ip, sender_port, wavelog_url = "", waveloggate_mode = false, wavelog_dict = Hash.new)
+
+  # just store package if waveloggate mode is inactive
+  unless waveloggate_mode
+    store_package(db, callsign, adif, sender_ip, sender_port, waveloggate_mode)
+    return color_text("\nStored ADIF package for qso with #{partner_call} using callsign '#{call}' (from #{sender_ip}:#{sender_port}).", "green")
+  end
+
+  # store package if station callsign is not defined in config
+  unless wavelog_dict.keys.include?()
+    store_package(db, callsign, adif, sender_ip, sender_port, waveloggate_mode)
+    return color_text("\nStored ADIF package for qso with #{partner_call} using UNKOWN callsign '#{call}' (from #{sender_ip}:#{sender_port}).", "yellow")
+  end
+
+  # store package if url is empty
+  if wavelog_url == ""
+    store_package(db, callsign, adif, sender_ip, sender_port, waveloggate_mode)
+    return color_text("\nStored ADIF package for qso with #{partner_call} using callsign '#{call}' (from #{sender_ip}:#{sender_port}).", "green")
+  end
+
+  # load callsign config
+  callsignconfig = wavelog_dict[callsign]
+
+  # try to send data directly to wavelog
+  result = send_to_wavelog(wavelog_url, callsignconfig["key"], callsignconfig["station_id"], adif)
+
+  # if API is ok, return success, if not, store package for later
+  if result == 201
+    return color_text("\nSent ADIF package for qso with #{partner_call} using callsign '#{call}' to Wavelog.", "green")
+  else
+    store_package(db, callsign, adif, sender_ip, sender_port, waveloggate_mode)
+    return color_text("\nStored ADIF package for qso with #{partner_call} because of API failure.", "yellow")
+  end
+end
+
+# try to send the package directly to Wavelog
+def send_to_wavelog(urlraw, api_key, station_id, adif)
+  
+  # Define the API endpoint
+  url = URI(urlraw.rstrip.chomp("/") + "/index.php/api/qso")
+
+  # Define the request payload
+  payload = {
+    key: api_key,
+    station_profile_id: station_id.to_s,
+    type: "adif",
+    string: adif
+  }.to_json
+
+  # Create the HTTP request
+  http = Net::HTTP.new(url.host, url.port)
+  http.use_ssl = (url.scheme == "https") # Enable SSL if needed
+
+  request = Net::HTTP::Post.new(url)
+  request["Content-Type"] = "application/json"
+  request["Accept"] = "application/json"
+  request.body = payload
+
+  # Execute the request
+  begin
+    response = http.request(request)
+  rescue
+    return 500
+  end
+  
+  # get http response code
+  responsecode = response.code
+
+  # return error code if error code is present
+  return responsecode if responsecode >= 400
+
+  # parse return code
+  begin
+    json_response = JSON.parse(response.body)
+    status =  json_response['status']
+  rescue JSON::ParserError
+    return 500
+  end
+  
+  # return success
+  return 201 if status == "created"
+  
+  # return error
+  return 500
+
 end
 
 # colors the text for console output
@@ -165,8 +262,12 @@ $indefinite_mode_running = false
 loop do
   
   # print instructions to screen
-  puts "\nSelect mode:"
-  puts "  1) Input – capture and store NEXT ADIF package for rebroadcast later"
+  if WAVELOG_DIRECT
+    puts "\nSelect mode (Wavelog Direct Mode):"
+  else
+    puts "\nSelect mode (WavelogGate Mode):"
+  end
+  puts "  1) Input – capture and handle NEXT ADIF package"
   puts "  2) Output – list stored packages & broadcast them"
   if $indefinite_mode_running
     puts "  3) Stop indefinite mode"
@@ -220,10 +321,7 @@ loop do
       partner_call = extract_partner_callsign(adif) || "UNKNOWN"
 
       # store both original and modified packages, plus original and new callsigns.
-      store_package(db, call, adif, sender_ip, sender_port)
-
-      # info about the package we just received
-      puts color_text("\nStored ADIF package for qso with #{partner_call} using callsign '#{call}' (from #{sender_ip}:#{sender_port}).", "green")
+      puts handle_incoming_adif_package(db, call, adif, sender_ip, sender_port, WAVELOG_URL, WAVELOG_DIRECT, WAVELOG_DICT)
 
       # set the flag because we found an adif package
       notadifpackage = false
@@ -268,21 +366,44 @@ loop do
     
     # retrieve packages from database
     packages = retrieve_packages(db, selected_call)
+
+    # send to wavelog or send to udp
+    if WAVELOG_DICT.keys.include?(selected_call) and WAVELOG_URL != ""
+      
+      # track if all packages are delivered ok
+      allok = true
+
+      # send of each package to wavelog directly
+      packages.each do |id, pkg|
+        response = send_to_wavelog(WAVELOG_URL, WAVELOG_DICT[selected_call]["key"], WAVELOG_DICT[selected_call]["station_id"], pkg)
+        allok = false unless response == 201
+        sleep 0.5  # slight delay between packets
+      end
+
+      # delete those packages only if all are ok
+      delete_packages(db, selected_call) if allok
+      
+      # print result and resume
+      puts color_text("Sent and removed stored packages for '#{selected_call}'.", "green")
+      next
+    else
     
-    # print whats happening
-    puts color_text("Sending #{packages.size} package(s) for '#{selected_call}' to #{SEND_IP}:#{SEND_PORT}...", "yellow")
+      # print whats happening
+      puts color_text("Sending #{packages.size} package(s) for '#{selected_call}' to #{SEND_IP}:#{SEND_PORT}...", "yellow")
 
-    # rebroadcast each package
-    packages.each do |id, pkg|
-      udp_send.send(pkg, 0, SEND_IP, SEND_PORT)
-      sleep 0.5  # slight delay between packets
+      # rebroadcast each package to udp socket
+      packages.each do |id, pkg|
+        udp_send.send(pkg, 0, SEND_IP, SEND_PORT)
+        sleep 0.5  # slight delay between packets
+      end
+
+      # delete broadcasted packages from database
+      delete_packages(db, selected_call)
+
+      # print info message
+      puts color_text("Sent and removed stored packages for '#{selected_call}'.", "green")
+
     end
-
-    # delete broadcasted packages from database
-    delete_packages(db, selected_call)
-
-    # print info message
-    puts color_text("Sent and removed stored packages for '#{selected_call}'.", "green")
 
   when '3'
     # Indefinite mode
@@ -310,18 +431,13 @@ loop do
               proxy_send.send(data, 0, PROXY_TO_IP, PROXY_TO_PORT)
             end
 
-            unless data.include?("<adif_ver:")
-              store_other(db, data, sender_ip, sender_port) if VERBOSE_LOGGING
-              print color_text("\nReceived packet does not appear to be a valid ADIF package. Ignoring.", "yellow") if VERBOSE_LOGGING
-              next
-            end
+            next unless data.include?("<adif_ver:")
 
             adif_start = data.index("<adif_ver:")
             adif = data[adif_start..-1]
             call = extract_station_callsign(adif) || "UNKNOWN"
             partner_call = extract_partner_callsign(adif) || "UNKNOWN"
-            store_package(db, call, adif, sender_ip, sender_port)
-            print color_text("\nStored ADIF package for qso with #{partner_call} using callsign '#{call}' (from #{sender_ip}:#{sender_port}).", "green")
+            puts handle_incoming_adif_package(db, call, adif, sender_ip, sender_port, WAVELOG_URL, WAVELOG_DIRECT, WAVELOG_DICT)
           end
         end
       end
@@ -336,7 +452,7 @@ loop do
 
   else
     # inform about invalid choice
-    puts color_text("Invalid choice. Please enter 1, 2, or 3.", "red")
+    puts color_text("Invalid choice. Please enter 1, 2, 3 or 4.", "red")
   end
 end
 
