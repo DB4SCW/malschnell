@@ -5,6 +5,7 @@ require 'ipaddr'
 require 'net/http'
 require 'json'
 require 'uri'
+require 'openssl'
 
 # Default configuration values
 default_config = {
@@ -151,24 +152,24 @@ def delete_packages(db, callsign)
 end
 
 # handle package
-def handle_incoming_adif_package(db, callsign, adif, sender_ip, sender_port, wavelog_url = "", waveloggate_mode = false, wavelog_dict = Hash.new)
+def handle_incoming_adif_package(db, callsign, partner_call, adif, sender_ip, sender_port, wavelog_url = "", waveloggate_mode = false, wavelog_dict = Hash.new)
 
   # just store package if waveloggate mode is inactive
   unless waveloggate_mode
     store_package(db, callsign, adif, sender_ip, sender_port, waveloggate_mode)
-    return color_text("\nStored ADIF package for qso with #{partner_call} using callsign '#{call}' (from #{sender_ip}:#{sender_port}).", "green")
+    return color_text("\nStored ADIF package for qso with #{partner_call} using callsign '#{calcallsignl}' (from #{sender_ip}:#{sender_port}).", "green")
   end
 
   # store package if station callsign is not defined in config
-  unless wavelog_dict.keys.include?()
+  unless wavelog_dict.keys.include?(callsign)
     store_package(db, callsign, adif, sender_ip, sender_port, waveloggate_mode)
-    return color_text("\nStored ADIF package for qso with #{partner_call} using UNKOWN callsign '#{call}' (from #{sender_ip}:#{sender_port}).", "yellow")
+    return color_text("\nStored ADIF package for qso with #{partner_call} using UNKOWN callsign '#{callsign}' (from #{sender_ip}:#{sender_port}).", "yellow")
   end
 
   # store package if url is empty
   if wavelog_url == ""
     store_package(db, callsign, adif, sender_ip, sender_port, waveloggate_mode)
-    return color_text("\nStored ADIF package for qso with #{partner_call} using callsign '#{call}' (from #{sender_ip}:#{sender_port}).", "green")
+    return color_text("\nStored ADIF package for qso with #{partner_call} using callsign '#{callsign}' (from #{sender_ip}:#{sender_port}).", "green")
   end
 
   # load callsign config
@@ -179,7 +180,7 @@ def handle_incoming_adif_package(db, callsign, adif, sender_ip, sender_port, wav
 
   # if API is ok, return success, if not, store package for later
   if result == 201
-    return color_text("\nSent ADIF package for qso with #{partner_call} using callsign '#{call}' to Wavelog.", "green")
+    return color_text("\nSent ADIF package for qso with #{partner_call} using callsign '#{callsign}' to Wavelog.", "green")
   else
     store_package(db, callsign, adif, sender_ip, sender_port, waveloggate_mode)
     return color_text("\nStored ADIF package for qso with #{partner_call} because of API failure.", "yellow")
@@ -203,6 +204,7 @@ def send_to_wavelog(urlraw, api_key, station_id, adif)
   # Create the HTTP request
   http = Net::HTTP.new(url.host, url.port)
   http.use_ssl = (url.scheme == "https") # Enable SSL if needed
+  http.verify_mode = OpenSSL::SSL::VERIFY_NONE
 
   request = Net::HTTP::Post.new(url)
   request["Content-Type"] = "application/json"
@@ -210,8 +212,9 @@ def send_to_wavelog(urlraw, api_key, station_id, adif)
   request.body = payload
 
   # Execute the request
+  response = http.request(request)
   begin
-    response = http.request(request)
+    
   rescue
     return 500
   end
@@ -220,7 +223,7 @@ def send_to_wavelog(urlraw, api_key, station_id, adif)
   responsecode = response.code
 
   # return error code if error code is present
-  return responsecode if responsecode >= 400
+  return responsecode if responsecode.to_i >= 400
 
   # parse return code
   begin
@@ -234,7 +237,7 @@ def send_to_wavelog(urlraw, api_key, station_id, adif)
   return 201 if status == "created"
   
   # return error
-  return 500
+  return 418
 
 end
 
@@ -321,7 +324,7 @@ loop do
       partner_call = extract_partner_callsign(adif) || "UNKNOWN"
 
       # store both original and modified packages, plus original and new callsigns.
-      puts handle_incoming_adif_package(db, call, adif, sender_ip, sender_port, WAVELOG_URL, WAVELOG_DIRECT, WAVELOG_DICT)
+      puts handle_incoming_adif_package(db, call, partner_call, adif, sender_ip, sender_port, WAVELOG_URL, WAVELOG_DIRECT, WAVELOG_DICT)
 
       # set the flag because we found an adif package
       notadifpackage = false
@@ -368,7 +371,7 @@ loop do
     packages = retrieve_packages(db, selected_call)
 
     # send to wavelog or send to udp
-    if WAVELOG_DICT.keys.include?(selected_call) and WAVELOG_URL != ""
+    if WAVELOG_DICT.keys.include?(selected_call) and WAVELOG_URL != "" and WAVELOG_DIRECT
       
       # track if all packages are delivered ok
       allok = true
@@ -376,7 +379,9 @@ loop do
       # send of each package to wavelog directly
       packages.each do |id, pkg|
         response = send_to_wavelog(WAVELOG_URL, WAVELOG_DICT[selected_call]["key"], WAVELOG_DICT[selected_call]["station_id"], pkg)
-        allok = false unless response == 201
+        unless response == 201
+          allok = false 
+        end
         sleep 0.5  # slight delay between packets
       end
 
@@ -384,7 +389,11 @@ loop do
       delete_packages(db, selected_call) if allok
       
       # print result and resume
-      puts color_text("Sent and removed stored packages for '#{selected_call}'.", "green")
+      if allok
+        puts color_text("Sent and removed stored packages for '#{selected_call}'.", "green")
+      else
+        puts color_text("One or more packages for '#{selected_call}' could not be sent successfully.", "yellow")
+      end
       next
     else
     
@@ -437,7 +446,7 @@ loop do
             adif = data[adif_start..-1]
             call = extract_station_callsign(adif) || "UNKNOWN"
             partner_call = extract_partner_callsign(adif) || "UNKNOWN"
-            puts handle_incoming_adif_package(db, call, adif, sender_ip, sender_port, WAVELOG_URL, WAVELOG_DIRECT, WAVELOG_DICT)
+            puts handle_incoming_adif_package(db, call, partner_call, adif, sender_ip, sender_port, WAVELOG_URL, WAVELOG_DIRECT, WAVELOG_DICT)
           end
         end
       end
