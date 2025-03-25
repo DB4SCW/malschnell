@@ -212,9 +212,8 @@ def send_to_wavelog(urlraw, api_key, station_id, adif)
   request.body = payload
 
   # Execute the request
-  response = http.request(request)
   begin
-    
+    response = http.request(request)  
   rescue
     return 500
   end
