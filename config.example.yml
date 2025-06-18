@@ -1,0 +1,21 @@
+---
+WSJT_RX_PORT: 2237
+SEND_PORT: 2333
+BIND_IP: 0.0.0.0
+SEND_IP: 127.0.0.1
+DATABASE_NAME: packages.sqlite3
+DB_JOURNAL_MODE: WAL
+MULTICAST_GROUP: 239.255.0.1
+PROXY_PACKAGES: true
+PROXY_TO_IP: 127.0.0.1
+PROXY_TO_PORT: 2238
+VERBOSE_LOGGING: true
+WAVELOG_DIRECT: true
+WAVELOG_URL: https://your.wavelog.here
+WAVELOG_DICT:
+  N0ICE:
+    key: wl664a40d6c3001
+    station_id: 1
+  DE3LULU:
+    key: wl764a40d5c3009
+    station_id: 9
