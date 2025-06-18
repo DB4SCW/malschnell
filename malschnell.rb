@@ -151,6 +151,10 @@ def delete_packages(db, callsign)
   db.execute("DELETE FROM packages WHERE callsign = ?", [callsign])
 end
 
+def delete_one_package(db, id)
+  db.execute("DELETE FROM packages WHERE id = ?", [id])
+end
+
 # handle package
 def handle_incoming_adif_package(db, callsign, partner_call, adif, sender_ip, sender_port, wavelog_url = "", waveloggate_mode = false, wavelog_dict = Hash.new)
 
@@ -380,12 +384,11 @@ loop do
         response = send_to_wavelog(WAVELOG_URL, WAVELOG_DICT[selected_call]["key"], WAVELOG_DICT[selected_call]["station_id"], pkg)
         unless response == 201
           allok = false 
+        else
+          delete_one_package(db, id)
         end
         sleep 0.5  # slight delay between packets
       end
-
-      # delete those packages only if all are ok
-      delete_packages(db, selected_call) if allok
       
       # print result and resume
       if allok
