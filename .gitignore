@@ -7,3 +7,4 @@ config.yml
 *.adi
 *.adif
 *.txt
+*.patch
